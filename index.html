@@ -2,31 +2,32 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>SIGNA — Reconocimiento en tiempo real</title>
-  <link rel="stylesheet" href="style.css" />
+  <title>Signa – Reconocimiento de Lengua de Signos</title>
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- MediaPipe -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 </head>
 <body>
 
-  <h1>SIGNA</h1>
+  <h1>Signa</h1>
 
-  <div class="container">
-    <!-- Cámara -->
-    <div class="camera-box">
-      <video id="video" autoplay playsinline></video>
-      <canvas id="canvas" width="640" height="480"></canvas>
-    </div>
-
-    <!-- Resultado -->
-    <div class="result-box">
-      <h2>Palabra detectada</h2>
-      <div id="prediction">—</div>
-      <div id="confidence"></div>
-    </div>
+  <div class="controls">
+    <button id="btnWebcam">Webcam</button>
+    <button id="btnVideo">Subir vídeo</button>
+    <input type="file" id="videoUpload" accept="video/*" hidden />
   </div>
 
-  <!-- MediaPipe -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <div class="video-container">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div class="result">
+    <h2>Palabra detectada:</h2>
+    <div id="prediction">—</div>
+  </div>
 
   <script src="script.js"></script>
 </body>
