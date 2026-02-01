@@ -45,7 +45,6 @@ hands.onResults(onResults);
 // ==============================
 function onResults(results) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
   if (!results.multiHandLandmarks) return;
 
@@ -76,12 +75,18 @@ async function sendToBackend(sequence) {
     });
 
     const data = await res.json();
-    predictionEl.textContent = data.label ?? "—";
+
+    if (data.label && data.confidence !== undefined) {
+      predictionEl.textContent =
+        `${data.label} (${(data.confidence * 100).toFixed(1)}%)`;
+    } else {
+      predictionEl.textContent = "—";
+    }
+
   } catch (err) {
     console.error(err);
   }
 }
-
 // ==============================
 // WEBCAM
 // ==============================
@@ -133,10 +138,9 @@ function processVideo() {
       return;
     }
 
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    await hands.send({ image: canvas });
+    await hands.send({ image: video });
 
-  }, 1000 / 25); // 25 FPS
+  }, 1000 / 25);
 }
 
 // ==============================
