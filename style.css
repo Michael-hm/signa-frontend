@@ -1,44 +1,30 @@
 body {
   font-family: Arial, sans-serif;
   background: #0f172a;
-  color: #e5e7eb;
+  color: white;
   text-align: center;
-  margin: 0;
-  padding: 20px;
 }
 
 h1 {
-  margin-bottom: 20px;
+  margin-top: 20px;
 }
 
-.controls {
-  margin-bottom: 20px;
+.container {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin-top: 30px;
 }
 
-button {
-  background: #6366f1;
-  border: none;
-  color: white;
-  padding: 10px 16px;
-  margin: 0 5px;
-  font-size: 16px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-button:hover {
-  background: #4f46e5;
-}
-
-.video-container {
+.camera-box {
   position: relative;
-  width: 640px;
-  margin: 0 auto;
 }
 
 video, canvas {
-  width: 100%;
-  border-radius: 10px;
+  width: 640px;
+  height: 480px;
+  border-radius: 12px;
+  border: 2px solid #38bdf8;
 }
 
 canvas {
@@ -47,13 +33,22 @@ canvas {
   left: 0;
 }
 
-.result {
-  margin-top: 30px;
+.result-box {
+  min-width: 250px;
+  padding: 20px;
+  background: #020617;
+  border-radius: 12px;
+  border: 2px solid #38bdf8;
 }
 
 #prediction {
-  font-size: 40px;
-  font-weight: bold;
+  font-size: 32px;
+  margin-top: 20px;
+  color: #38bdf8;
+}
+
+#confidence {
   margin-top: 10px;
-  color: #22c55e;
+  font-size: 14px;
+  opacity: 0.8;
 }
