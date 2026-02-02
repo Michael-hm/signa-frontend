@@ -48,7 +48,6 @@ hands.onResults(onResults);
 // ==============================
 function onResults(results) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
   if (!results.multiHandLandmarks) return;
 
@@ -56,12 +55,20 @@ function onResults(results) {
   const frame = [];
 
   landmarks.forEach(p => {
+    // Dibujar puntos
+    ctx.beginPath();
+    ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
+    ctx.fillStyle = "#38bdf8";
+    ctx.fill();
+
+    // Extraer features
     frame.push(p.x, p.y, p.z);
   });
 
   if (frame.length !== FEATURES) return;
 
   buffer.push(frame);
+  console.log("buffer length:", buffer.length);
 
   if (buffer.length === WINDOW_SIZE) {
     sendToBackend(buffer);
