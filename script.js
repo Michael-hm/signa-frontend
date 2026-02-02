@@ -18,7 +18,7 @@ let buffer = [];
 let camera = null;
 let mode = null;
 
-// -------- MediaPipe Holistic --------
+// ---------- HOLISTIC ----------
 const holistic = new Holistic({
   locateFile: (file) =>
     `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
@@ -34,7 +34,7 @@ holistic.setOptions({
 
 holistic.onResults(onResults);
 
-// -------- BOTÓN WEBCAM --------
+// ---------- WEBCAM ----------
 btnWebcam.onclick = async () => {
   reset();
   mode = "webcam";
@@ -50,7 +50,7 @@ btnWebcam.onclick = async () => {
   camera.start();
 };
 
-// -------- BOTÓN VIDEO --------
+// ---------- VIDEO ----------
 btnVideo.onclick = () => {
   reset();
   mode = "video";
@@ -62,14 +62,10 @@ videoUpload.onchange = async () => {
   if (!file) return;
 
   video.src = URL.createObjectURL(file);
-  video.muted = true;
-  video.playsInline = true;
-
   await video.play();
   processVideo();
 };
 
-// -------- PROCESAR VIDEO --------
 function processVideo() {
   const interval = setInterval(async () => {
     if (video.paused || video.ended || mode !== "video") {
@@ -80,7 +76,7 @@ function processVideo() {
   }, 1000 / 25);
 }
 
-// -------- RESULTADOS --------
+// ---------- RESULTADOS ----------
 function onResults(results) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -89,7 +85,6 @@ function onResults(results) {
   const frame = [];
 
   results.poseLandmarks.slice(0, 21).forEach(p => {
-    // dibujar
     ctx.beginPath();
     ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
     ctx.fillStyle = "#38bdf8";
@@ -101,6 +96,7 @@ function onResults(results) {
   if (frame.length !== FEATURES) return;
 
   buffer.push(frame);
+  console.log("buffer length:", buffer.length); // 🔥 DEBUG CLAVE
 
   if (buffer.length === WINDOW_SIZE) {
     sendToBackend(buffer);
@@ -108,27 +104,23 @@ function onResults(results) {
   }
 }
 
-// -------- BACKEND --------
+// ---------- BACKEND ----------
 async function sendToBackend(sequence) {
-  try {
-    const res = await fetch(BACKEND_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sequence }),
-    });
+  const res = await fetch(BACKEND_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sequence }),
+  });
 
-    if (!res.ok) return;
+  if (!res.ok) return;
 
-    const data = await res.json();
-    predictionEl.textContent = data.label;
-    confidenceEl.textContent =
-      `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
-  } catch (err) {
-    console.error(err);
-  }
+  const data = await res.json();
+  predictionEl.textContent = data.label;
+  confidenceEl.textContent =
+    `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
 }
 
-// -------- RESET --------
+// ---------- RESET ----------
 function reset() {
   buffer = [];
   predictionEl.textContent = "—";
