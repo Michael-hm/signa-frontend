@@ -1,4 +1,5 @@
 const BACKEND_URL = "https://signa-backend-production.up.railway.app/predict_sequence";
+
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -6,12 +7,18 @@ const ctx = canvas.getContext("2d");
 const predictionEl = document.getElementById("prediction");
 const confidenceEl = document.getElementById("confidence");
 
+const btnWebcam = document.getElementById("btnWebcam");
+const btnVideo = document.getElementById("btnVideo");
+const videoUpload = document.getElementById("videoUpload");
+
 const WINDOW_SIZE = 40;
 const FEATURES = 63;
 
 let buffer = [];
+let camera = null;
+let mode = null;
 
-// -------- MediaPipe --------
+// -------- MediaPipe Holistic --------
 const holistic = new Holistic({
   locateFile: (file) =>
     `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
@@ -27,35 +34,69 @@ holistic.setOptions({
 
 holistic.onResults(onResults);
 
-// -------- Cámara --------
-const camera = new Camera(video, {
-  onFrame: async () => {
+// -------- BOTÓN WEBCAM --------
+btnWebcam.onclick = async () => {
+  reset();
+  mode = "webcam";
+
+  camera = new Camera(video, {
+    onFrame: async () => {
+      await holistic.send({ image: video });
+    },
+    width: 640,
+    height: 480,
+  });
+
+  camera.start();
+};
+
+// -------- BOTÓN VIDEO --------
+btnVideo.onclick = () => {
+  reset();
+  mode = "video";
+  videoUpload.click();
+};
+
+videoUpload.onchange = async () => {
+  const file = videoUpload.files[0];
+  if (!file) return;
+
+  video.src = URL.createObjectURL(file);
+  video.muted = true;
+  video.playsInline = true;
+
+  await video.play();
+  processVideo();
+};
+
+// -------- PROCESAR VIDEO --------
+function processVideo() {
+  const interval = setInterval(async () => {
+    if (video.paused || video.ended || mode !== "video") {
+      clearInterval(interval);
+      return;
+    }
     await holistic.send({ image: video });
-  },
-  width: 640,
-  height: 480,
-});
+  }, 1000 / 25);
+}
 
-camera.start();
-
-// -------- Procesar resultados --------
+// -------- RESULTADOS --------
 function onResults(results) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   if (!results.poseLandmarks) return;
 
-  // Dibujar puntos
-  results.poseLandmarks.forEach(p => {
+  const frame = [];
+
+  results.poseLandmarks.slice(0, 21).forEach(p => {
+    // dibujar
     ctx.beginPath();
     ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
     ctx.fillStyle = "#38bdf8";
     ctx.fill();
-  });
 
-  // Extraer 63 features (ejemplo simple)
-  const frame = results.poseLandmarks
-    .slice(0, 21)
-    .flatMap(p => [p.x, p.y, p.z]);
+    frame.push(p.x, p.y, p.z);
+  });
 
   if (frame.length !== FEATURES) return;
 
@@ -67,24 +108,37 @@ function onResults(results) {
   }
 }
 
-// -------- Enviar al backend --------
+// -------- BACKEND --------
 async function sendToBackend(sequence) {
   try {
     const res = await fetch(BACKEND_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sequence }),
     });
 
     if (!res.ok) return;
 
     const data = await res.json();
-
     predictionEl.textContent = data.label;
-    confidenceEl.textContent = `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
+    confidenceEl.textContent =
+      `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
   } catch (err) {
-    console.error("Error enviando datos:", err);
+    console.error(err);
   }
+}
+
+// -------- RESET --------
+function reset() {
+  buffer = [];
+  predictionEl.textContent = "—";
+  confidenceEl.textContent = "—";
+
+  if (camera) {
+    camera.stop();
+    camera = null;
+  }
+
+  video.pause();
+  video.src = "";
 }

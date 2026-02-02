@@ -2,25 +2,29 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>SIGNA — Reconocimiento en tiempo real</title>
+  <title>SIGNA</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
   <h1>SIGNA</h1>
 
+  <div class="controls">
+    <button id="btnWebcam">Webcam</button>
+    <button id="btnVideo">Subir vídeo</button>
+    <input type="file" id="videoUpload" accept="video/*" hidden />
+  </div>
+
   <div class="container">
-    <!-- Cámara -->
     <div class="camera-box">
-      <video id="video" autoplay playsinline></video>
+      <video id="video" autoplay playsinline muted></video>
       <canvas id="canvas" width="640" height="480"></canvas>
     </div>
 
-    <!-- Resultado -->
     <div class="result-box">
       <h2>Palabra detectada</h2>
       <div id="prediction">—</div>
-      <div id="confidence"></div>
+      <div id="confidence">—</div>
     </div>
   </div>
 
