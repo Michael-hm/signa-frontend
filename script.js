@@ -3,7 +3,7 @@
 // ==============================
 const BACKEND_URL = "https://signa-backend-production.up.railway.app/predict_sequence";
 const WINDOW_SIZE = 40;
-const FRATURES = 63;
+const FEATURES = 63;
 
 // ==============================
 // ELEMENTOS DOM
@@ -12,7 +12,7 @@ const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const predictionEl = document.getElementById("prediction");
-const confidenceEL = document.getElementById("confidence");
+const confidenceEl = document.getElementById("confidence");
 const btnWebcam = document.getElementById("btnWebcam");
 const btnVideo = document.getElementById("btnVideo");
 const videoUpload = document.getElementById("videoUpload");
@@ -32,10 +32,10 @@ const hands = new Hands({
     `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
 });
 
-holistic.setOptions({
+hands.setOptions({
+  maxNumHands: 2,
   modelComplexity: 1,
   smoothLandmarks: true,
-  refineFaceLandmarks: false,
   minDetectionConfidence: 0.5,
   minTrackingConfidence: 0.5,
 });
@@ -48,10 +48,12 @@ hands.onResults(onResults);
 function onResults(results) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  if (!results.poseLandmarks) return;
+  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
+
+  const landmarks = results.multiHandLandmarks[0];
 
   // Dibujar landmarks
-  results.poseLandmarks.forEach(p => {
+  landmarks.forEach(p => {
     ctx.beginPath();
     ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
     ctx.fillStyle = "#38bdf8";
@@ -59,7 +61,7 @@ function onResults(results) {
   });
 
   // Extraer 63 features
-  const frame = results.poseLandmarks
+  const frame = landmarks
     .slice(0, 21)
     .flatMap(p => [p.x, p.y, p.z]);
 
@@ -112,6 +114,10 @@ btnWebcam.onclick = async () => {
   });
 
   await camera.start();
+
+  // Ajustar canvas al tamaño de la cámara
+  canvas.width = 640;
+  canvas.height = 480;
 };
 
 // ==============================
@@ -141,7 +147,7 @@ videoUpload.onchange = async() => {
 
 function processVideo() {
   const interval = setInterval(async () => {
-    if (video.paused || video.ended || currentMode !== "video") {
+    if (video.paused || video.ended || currentMode !== "btnVideo") {
       clearInterval(interval);
       return;
     }
@@ -157,7 +163,7 @@ function processVideo() {
 function reset() {
   buffer = [];
   predictionEl.textContent = "—";
-  confidenceEL.textContent = "—";
+  confidenceEl.textContent = "—";
 
   if (camera) {
     camera.stop();
