@@ -19,6 +19,12 @@ let currentMode = null;
 let animationId = null;
 let stream = null;
 
+let sending = false;
+
+let lastFrameTime = 0;
+const TARGET_FPS = 20;
+const FRAME_INTERVAL = 1000 / TARGET_FPS;
+
 // ==============================
 // MEDIAPIPE HOLISTIC
 // ==============================
@@ -28,7 +34,7 @@ const holistic = new Holistic({
 });
 
 holistic.setOptions({
-  modelComplexity: 1,
+  modelComplexity: 0,
   smoothLandmarks: true,
   refineFaceLandmarks: false,
   minDetectionConfidence: 0.5,
@@ -40,11 +46,19 @@ holistic.onResults(onResults);
 // ==============================
 // LOOP ÚNICO DE PROCESADO
 // ==============================
-async function processFrame() {
+async function processFrame(timestamp) {
+  if (timestamp - lastFrameTime < FRAME_INTERVAL) {
+    animationId = requestAnimationFrame(processFrame);
+    return;
+  }
+
+  lastFrameTime = timestamp;
+
   if (video.readyState >= 2) {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     await holistic.send({ image: canvas });
   }
+
   animationId = requestAnimationFrame(processFrame);
 }
 
@@ -69,10 +83,13 @@ function onResults(results) {
 
   buffer.push(frame);
 
-  if (buffer.length === WINDOW_SIZE) {
-    sendToBackend(buffer);
-    buffer = [];
-  }
+if (buffer.length === WINDOW_SIZE && !sending) {
+  sending = true;
+  sendToBackend(buffer).finally(() => {
+    sending = false;
+  });
+  buffer = [];
+}
 }
 
 // ==============================
