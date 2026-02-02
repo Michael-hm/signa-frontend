@@ -6,19 +6,21 @@ const WINDOW_SIZE = 40;
 const FEATURES = 63;
 
 // ==============================
-// ELEMENTOS DOM
+// DOM
 // ==============================
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
+
 const predictionEl = document.getElementById("prediction");
 const confidenceEl = document.getElementById("confidence");
+
 const btnWebcam = document.getElementById("btnWebcam");
 const btnVideo = document.getElementById("btnVideo");
 const videoUpload = document.getElementById("videoUpload");
 
 // ==============================
-// ESTADO
+// STATE
 // ==============================
 let buffer = [];
 let camera = null;
@@ -28,42 +30,34 @@ let currentMode = null;
 // MEDIAPIPE HANDS
 // ==============================
 const hands = new Hands({
-  locateFile: file =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  locateFile: (file) =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
 });
 
 hands.setOptions({
-  maxNumHands: 2,
+  maxNumHands: 1,
   modelComplexity: 1,
-  smoothLandmarks: true,
-  minDetectionConfidence: 0.5,
-  minTrackingConfidence: 0.5,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6,
 });
 
 hands.onResults(onResults);
 
 // ==============================
-// RESULTADOS MEDIAPIPE
+// RESULTS
 // ==============================
 function onResults(results) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
-  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
+  if (!results.multiHandLandmarks) return;
 
   const landmarks = results.multiHandLandmarks[0];
+  const frame = [];
 
-  // Dibujar landmarks
   landmarks.forEach(p => {
-    ctx.beginPath();
-    ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
-    ctx.fillStyle = "#38bdf8";
-    ctx.fill();
+    frame.push(p.x, p.y, p.z);
   });
-
-  // Extraer 63 features
-  const frame = landmarks
-    .slice(0, 21)
-    .flatMap(p => [p.x, p.y, p.z]);
 
   if (frame.length !== FEATURES) return;
 
@@ -89,11 +83,10 @@ async function sendToBackend(sequence) {
     if (!res.ok) return;
 
     const data = await res.json();
-
     predictionEl.textContent = data.label ?? "—";
     confidenceEl.textContent = `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
   } catch (err) {
-    console.error("Error enviando datos:", err);
+    console.error(err);
   }
 }
 
@@ -102,41 +95,36 @@ async function sendToBackend(sequence) {
 // ==============================
 btnWebcam.onclick = async () => {
   reset();
+  currentMode = "webcam";
 
-  currentMode = "btnWebcam";
+  canvas.width = 640;
+  canvas.height = 480;
 
   camera = new Camera(video, {
     onFrame: async () => {
       await hands.send({ image: video });
     },
     width: 640,
-    height: 480
+    height: 480,
   });
 
   await camera.start();
-
-  // Ajustar canvas al tamaño de la cámara
-  canvas.width = 640;
-  canvas.height = 480;
 };
 
 // ==============================
-// VIDEO SUBIDO
+// VIDEO UPLOAD
 // ==============================
 btnVideo.onclick = () => {
   reset();
-  currentMode = "btnVideo";
+  currentMode = "video";
   videoUpload.click();
 };
 
-videoUpload.onchange = async() => {
+videoUpload.onchange = async () => {
   const file = videoUpload.files[0];
   if (!file) return;
 
   video.src = URL.createObjectURL(file);
-  video.muted = true;
-  video.playsInline = true;
-  
   await video.play();
 
   canvas.width = video.videoWidth;
@@ -147,13 +135,11 @@ videoUpload.onchange = async() => {
 
 function processVideo() {
   const interval = setInterval(async () => {
-    if (video.paused || video.ended || currentMode !== "btnVideo") {
+    if (video.paused || video.ended || currentMode !== "video") {
       clearInterval(interval);
       return;
     }
-
     await hands.send({ image: video });
-
   }, 1000 / 25);
 }
 
