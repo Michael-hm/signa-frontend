@@ -15,10 +15,13 @@ const WINDOW_SIZE = 40;
 const FEATURES = 63;
 
 let buffer = [];
-let camera = null;
-let mode = null;
+let currentMode = null;
+let animationId = null;
+let stream = null;
 
-// ---------- HOLISTIC ----------
+// ==============================
+// MEDIAPIPE HOLISTIC
+// ==============================
 const holistic = new Holistic({
   locateFile: (file) =>
     `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
@@ -34,26 +37,113 @@ holistic.setOptions({
 
 holistic.onResults(onResults);
 
-// ---------- WEBCAM ----------
-btnWebcam.onclick = async () => {
-  reset();
-  mode = "webcam";
+// ==============================
+// LOOP ÚNICO DE PROCESADO
+// ==============================
+async function processFrame() {
+  if (video.readyState >= 2) {
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    await holistic.send({ image: canvas });
+  }
+  animationId = requestAnimationFrame(processFrame);
+}
 
-  camera = new Camera(video, {
-    onFrame: async () => {
-      await holistic.send({ image: video });
-    },
-    width: 640,
-    height: 480,
+// ==============================
+// RESULTADOS
+// ==============================
+function onResults(results) {
+  if (!results.poseLandmarks) return;
+
+  results.poseLandmarks.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, Math.PI * 2);
+    ctx.fillStyle = "#38bdf8";
+    ctx.fill();
   });
 
-  camera.start();
+  const frame = results.poseLandmarks
+    .slice(0, 21)
+    .flatMap(p => [p.x, p.y, p.z]);
+
+  if (frame.length !== FEATURES) return;
+
+  buffer.push(frame);
+
+  if (buffer.length === WINDOW_SIZE) {
+    sendToBackend(buffer);
+    buffer = [];
+  }
+}
+
+// ==============================
+// BACKEND
+// ==============================
+async function sendToBackend(sequence) {
+  try {
+    const res = await fetch(BACKEND_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sequence }),
+    });
+
+    if (!res.ok) return;
+
+    const data = await res.json();
+    predictionEl.textContent = data.label;
+    confidenceEl.textContent =
+      `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// ==============================
+// RESET TOTAL
+// ==============================
+function reset() {
+  buffer = [];
+  predictionEl.textContent = "—";
+  confidenceEl.textContent = "";
+
+  if (animationId) {
+    cancelAnimationFrame(animationId);
+    animationId = null;
+  }
+
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+
+  video.pause();
+  video.srcObject = null;
+  video.src = "";
+}
+
+// ==============================
+// WEBCAM
+// ==============================
+btnWebcam.onclick = async () => {
+  reset();
+  currentMode = "webcam";
+
+  stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  video.srcObject = stream;
+
+  await video.play();
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  processFrame();
 };
 
-// ---------- VIDEO ----------
+// ==============================
+// VÍDEO SUBIDO
+// ==============================
 btnVideo.onclick = () => {
   reset();
-  mode = "video";
+  currentMode = "video";
   videoUpload.click();
 };
 
@@ -64,87 +154,11 @@ videoUpload.onchange = async () => {
   video.src = URL.createObjectURL(file);
   video.loop = true;
   video.muted = true;
-  video.playsInline = true;
 
   await video.play();
 
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
 
-  processVideo();
+  processFrame();
 };
-
-function processVideo() {
-  const fps = 25;
-
-  const interval = setInterval(async () => {
-    if (video.paused || video.ended) {
-      clearInterval(interval);
-      return;
-    }
-
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    await holistic.send({ image: canvas });
-
-  }, 1000 / fps);
-}
-
-// ---------- RESULTADOS ----------
-function onResults(results) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (!results.poseLandmarks) return;
-
-  const frame = [];
-
-  results.poseLandmarks.slice(0, 21).forEach(p => {
-    ctx.beginPath();
-    ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
-    ctx.fillStyle = "#38bdf8";
-    ctx.fill();
-
-    frame.push(p.x, p.y, p.z);
-  });
-
-  if (frame.length !== FEATURES) return;
-
-  buffer.push(frame);
-  console.log("buffer length:", buffer.length); // 🔥 DEBUG CLAVE
-
-  if (buffer.length === WINDOW_SIZE) {
-    sendToBackend(buffer);
-    buffer = [];
-  }
-}
-
-// ---------- BACKEND ----------
-async function sendToBackend(sequence) {
-  const res = await fetch(BACKEND_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sequence }),
-  });
-
-  if (!res.ok) return;
-
-  const data = await res.json();
-  predictionEl.textContent = data.label;
-  confidenceEl.textContent =
-    `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
-}
-
-// ---------- RESET ----------
-function reset() {
-  buffer = [];
-  predictionEl.textContent = "—";
-  confidenceEl.textContent = "—";
-
-  if (camera) {
-    camera.stop();
-    camera = null;
-  }
-
-  video.pause();
-  video.src = "";
-}
