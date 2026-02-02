@@ -62,6 +62,10 @@ videoUpload.onchange = async () => {
   if (!file) return;
 
   video.src = URL.createObjectURL(file);
+  video.loop = true;
+  video.muted = true;
+  video.playsInline = true;
+
   await video.play();
   processVideo();
 };
