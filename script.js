@@ -101,7 +101,7 @@ async function sendToBackend(sequence) {
 btnWebcam.onclick = async () => {
   reset();
 
-  currentMode = "webcam";
+  currentMode = "btnWebcam";
 
   camera = new Camera(video, {
     onFrame: async () => {
@@ -119,7 +119,7 @@ btnWebcam.onclick = async () => {
 // ==============================
 btnVideo.onclick = () => {
   reset();
-  currentMode = "video";
+  currentMode = "btnVideo";
   videoUpload.click();
 };
 
