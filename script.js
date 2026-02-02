@@ -67,17 +67,27 @@ videoUpload.onchange = async () => {
   video.playsInline = true;
 
   await video.play();
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
   processVideo();
 };
 
 function processVideo() {
+  const fps = 25;
+
   const interval = setInterval(async () => {
-    if (video.paused || video.ended || mode !== "video") {
+    if (video.paused || video.ended) {
       clearInterval(interval);
       return;
     }
-    await holistic.send({ image: video });
-  }, 1000 / 25);
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    await holistic.send({ image: canvas });
+
+  }, 1000 / fps);
 }
 
 // ---------- RESULTADOS ----------
