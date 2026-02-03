@@ -134,7 +134,6 @@ function reset() {
 
   video.pause();
   video.srcObject = null;
-  video.src = "";
 }
 
 // ==============================
@@ -168,14 +167,37 @@ videoUpload.onchange = async () => {
   const file = videoUpload.files[0];
   if (!file) return;
 
-  video.src = URL.createObjectURL(file);
-  video.loop = true;
-  video.muted = true;
+  const videoFile = document.createElement("video");
+  videoFile.src = URL.createObjectURL(file);
+  videoFile.muted = true;
+  videoFile.playsInline = true;
+  videoFile.loop = true;
 
-  await video.play();
+  await videoFile.play();
 
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  canvas.width = videoFile.videoWidth;
+  canvas.height = videoFile.videoHeight;
 
-  processFrame();
+  processUploadedVideo(videoFile);
 };
+
+function processUploadedVideo(videoFile) {
+  let lastTime = 0;
+
+  function loop(timestamp) {
+    if (currentMode !== "video" || videoFile.ended || videoFile.paused) {
+      return;
+    }
+
+    if (timestamp - lastTime >= FRAME_INTERVAL) {
+      lastTime = timestamp;
+
+      ctx.drawImage(videoFile, 0, 0, canvas.width, canvas.height);
+      holistic.send({ image: canvas });
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(loop);
+}
