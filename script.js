@@ -15,17 +15,26 @@ const WINDOW_SIZE = 40;
 const FEATURES = 63;
 
 let buffer = [];
-let camera = null;
-let mode = null;
+let currentMode = null;
+let animationId = null;
+let stream = null;
 
-// -------- MediaPipe Holistic --------
+let sending = false;
+
+let lastFrameTime = 0;
+const TARGET_FPS = 20;
+const FRAME_INTERVAL = 1000 / TARGET_FPS;
+
+// ==============================
+// MEDIAPIPE HOLISTIC
+// ==============================
 const holistic = new Holistic({
   locateFile: (file) =>
     `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
 });
 
 holistic.setOptions({
-  modelComplexity: 1,
+  modelComplexity: 0,
   smoothLandmarks: true,
   refineFaceLandmarks: false,
   minDetectionConfidence: 0.5,
@@ -34,81 +43,58 @@ holistic.setOptions({
 
 holistic.onResults(onResults);
 
-// -------- BOTÓN WEBCAM --------
-btnWebcam.onclick = async () => {
-  reset();
-  mode = "webcam";
+// ==============================
+// LOOP ÚNICO DE PROCESADO
+// ==============================
+async function processFrame(timestamp) {
+  if (timestamp - lastFrameTime < FRAME_INTERVAL) {
+    animationId = requestAnimationFrame(processFrame);
+    return;
+  }
 
-  camera = new Camera(video, {
-    onFrame: async () => {
-      await holistic.send({ image: video });
-    },
-    width: 640,
-    height: 480,
-  });
+  lastFrameTime = timestamp;
 
-  camera.start();
-};
+  if (video.readyState >= 2) {
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    await holistic.send({ image: canvas });
+  }
 
-// -------- BOTÓN VIDEO --------
-btnVideo.onclick = () => {
-  reset();
-  mode = "video";
-  videoUpload.click();
-};
-
-videoUpload.onchange = async () => {
-  const file = videoUpload.files[0];
-  if (!file) return;
-
-  video.src = URL.createObjectURL(file);
-  video.muted = true;
-  video.playsInline = true;
-
-  await video.play();
-  processVideo();
-};
-
-// -------- PROCESAR VIDEO --------
-function processVideo() {
-  const interval = setInterval(async () => {
-    if (video.paused || video.ended || mode !== "video") {
-      clearInterval(interval);
-      return;
-    }
-    await holistic.send({ image: video });
-  }, 1000 / 25);
+  animationId = requestAnimationFrame(processFrame);
 }
 
-// -------- RESULTADOS --------
+// ==============================
+// RESULTADOS
+// ==============================
 function onResults(results) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
   if (!results.poseLandmarks) return;
 
-  const frame = [];
-
-  results.poseLandmarks.slice(0, 21).forEach(p => {
-    // dibujar
+  results.poseLandmarks.forEach(p => {
     ctx.beginPath();
-    ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
+    ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, Math.PI * 2);
     ctx.fillStyle = "#38bdf8";
     ctx.fill();
-
-    frame.push(p.x, p.y, p.z);
   });
+
+  const frame = results.poseLandmarks
+    .slice(0, 21)
+    .flatMap(p => [p.x, p.y, p.z]);
 
   if (frame.length !== FEATURES) return;
 
   buffer.push(frame);
 
-  if (buffer.length === WINDOW_SIZE) {
-    sendToBackend(buffer);
-    buffer = [];
-  }
+if (buffer.length === WINDOW_SIZE && !sending) {
+  sending = true;
+  sendToBackend(buffer).finally(() => {
+    sending = false;
+  });
+  buffer = [];
+}
 }
 
-// -------- BACKEND --------
+// ==============================
+// BACKEND
+// ==============================
 async function sendToBackend(sequence) {
   try {
     const res = await fetch(BACKEND_URL, {
@@ -123,22 +109,73 @@ async function sendToBackend(sequence) {
     predictionEl.textContent = data.label;
     confidenceEl.textContent =
       `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
-  } catch (err) {
-    console.error(err);
+  } catch (e) {
+    console.error(e);
   }
 }
 
-// -------- RESET --------
+// ==============================
+// RESET TOTAL
+// ==============================
 function reset() {
   buffer = [];
   predictionEl.textContent = "—";
-  confidenceEl.textContent = "—";
+  confidenceEl.textContent = "";
 
-  if (camera) {
-    camera.stop();
-    camera = null;
+  if (animationId) {
+    cancelAnimationFrame(animationId);
+    animationId = null;
+  }
+
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
   }
 
   video.pause();
+  video.srcObject = null;
   video.src = "";
 }
+
+// ==============================
+// WEBCAM
+// ==============================
+btnWebcam.onclick = async () => {
+  reset();
+  currentMode = "webcam";
+
+  stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  video.srcObject = stream;
+
+  await video.play();
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  processFrame();
+};
+
+// ==============================
+// VÍDEO SUBIDO
+// ==============================
+btnVideo.onclick = () => {
+  reset();
+  currentMode = "video";
+  videoUpload.click();
+};
+
+videoUpload.onchange = async () => {
+  const file = videoUpload.files[0];
+  if (!file) return;
+
+  video.src = URL.createObjectURL(file);
+  video.loop = true;
+  video.muted = true;
+
+  await video.play();
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  processFrame();
+};
