@@ -1,19 +1,5 @@
-// ==============================
-// CONFIG
-// ==============================
 const BACKEND_URL = "https://signa-backend-production.up.railway.app/predict_sequence";
 
-const WINDOW_SIZE = 40;
-const FEATURES = 63;
-
-const TARGET_FPS = 20;
-const FRAME_INTERVAL = 1000 / TARGET_FPS;
-
-const VOTE_WINDOW = 5;
-
-// ==============================
-// DOM
-// ==============================
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -21,28 +7,25 @@ const ctx = canvas.getContext("2d");
 const predictionEl = document.getElementById("prediction");
 const confidenceEl = document.getElementById("confidence");
 
+const btnWebcam = document.getElementById("btnWebcam");
 const btnVideo = document.getElementById("btnVideo");
 const videoUpload = document.getElementById("videoUpload");
 
-// ==============================
-// STATE
-// ==============================
+const WINDOW_SIZE = 40;
+const FEATURES = 63;
+
 let buffer = [];
-let sending = false;
+let camera = null;
+let mode = null;
 
-let predictionHistory = [];
-let currentMode = "webcam";
-
-// ==============================
-// MEDIAPIPE HOLISTIC
-// ==============================
+// -------- MediaPipe Holistic --------
 const holistic = new Holistic({
   locateFile: (file) =>
     `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
 });
 
 holistic.setOptions({
-  modelComplexity: 0,
+  modelComplexity: 1,
   smoothLandmarks: true,
   refineFaceLandmarks: false,
   minDetectionConfidence: 0.5,
@@ -51,26 +34,26 @@ holistic.setOptions({
 
 holistic.onResults(onResults);
 
-// ==============================
-// WEBCAM (SIEMPRE ACTIVA)
-// ==============================
-const camera = new Camera(video, {
-  onFrame: async () => {
-    if (currentMode === "webcam") {
+// -------- BOTÓN WEBCAM --------
+btnWebcam.onclick = async () => {
+  reset();
+  mode = "webcam";
+
+  camera = new Camera(video, {
+    onFrame: async () => {
       await holistic.send({ image: video });
-    }
-  },
-  width: 640,
-  height: 480,
-});
+    },
+    width: 640,
+    height: 480,
+  });
 
-camera.start();
+  camera.start();
+};
 
-// ==============================
-// VIDEO UPLOAD
-// ==============================
+// -------- BOTÓN VIDEO --------
 btnVideo.onclick = () => {
-  currentMode = "video";
+  reset();
+  mode = "video";
   videoUpload.click();
 };
 
@@ -78,85 +61,54 @@ videoUpload.onchange = async () => {
   const file = videoUpload.files[0];
   if (!file) return;
 
-  currentMode = "video";
+  video.src = URL.createObjectURL(file);
+  video.muted = true;
+  video.playsInline = true;
 
-  video.style.display = "none";   
-  canvas.style.display = "block"; 
-
-  const videoFile = document.createElement("video");
-  videoFile.src = URL.createObjectURL(file);
-  videoFile.muted = true;
-  videoFile.playsInline = true;
-
-  await videoFile.play();
-
-  canvas.width = videoFile.videoWidth;
-  canvas.height = videoFile.videoHeight;
-
-  processUploadedVideo(videoFile);
+  await video.play();
+  processVideo();
 };
 
-function processUploadedVideo(videoFile) {
-  let lastFrameTime = 0;
-
-  function loop(timestamp) {
-    if (
-      videoFile.paused ||
-      videoFile.ended ||
-      currentMode !== "video"
-    ) {
-      currentMode = "webcam";
+// -------- PROCESAR VIDEO --------
+function processVideo() {
+  const interval = setInterval(async () => {
+    if (video.paused || video.ended || mode !== "video") {
+      clearInterval(interval);
       return;
     }
-
-    if (timestamp - lastFrameTime >= FRAME_INTERVAL) {
-      lastFrameTime = timestamp;
-
-      ctx.drawImage(videoFile, 0, 0, canvas.width, canvas.height);
-      holistic.send({ image: canvas });
-    }
-
-    requestAnimationFrame(loop);
-  }
-
-  requestAnimationFrame(loop);
+    await holistic.send({ image: video });
+  }, 1000 / 25);
 }
 
-// ==============================
-// RESULTS
-// ==============================
+// -------- RESULTADOS --------
 function onResults(results) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   if (!results.poseLandmarks) return;
 
-  // Dibujar landmarks
-  results.poseLandmarks.forEach((p) => {
+  const frame = [];
+
+  results.poseLandmarks.slice(0, 21).forEach(p => {
+    // dibujar
     ctx.beginPath();
     ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
     ctx.fillStyle = "#38bdf8";
     ctx.fill();
-  });
 
-  // Extraer 63 features
-  const frame = results.poseLandmarks
-    .slice(0, 21)
-    .flatMap((p) => [p.x, p.y, p.z]);
+    frame.push(p.x, p.y, p.z);
+  });
 
   if (frame.length !== FEATURES) return;
 
   buffer.push(frame);
 
-  if (buffer.length === WINDOW_SIZE && !sending) {
-    sending = true;
-    sendToBackend(buffer).finally(() => (sending = false));
+  if (buffer.length === WINDOW_SIZE) {
+    sendToBackend(buffer);
     buffer = [];
   }
 }
 
-// ==============================
-// BACKEND
-// ==============================
+// -------- BACKEND --------
 async function sendToBackend(sequence) {
   try {
     const res = await fetch(BACKEND_URL, {
@@ -168,41 +120,25 @@ async function sendToBackend(sequence) {
     if (!res.ok) return;
 
     const data = await res.json();
-
-    if (data.confidence < 0.03) return;
-
-    handlePrediction(data.label);
+    predictionEl.textContent = data.label;
+    confidenceEl.textContent =
+      `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
   } catch (err) {
-    console.error("Backend error:", err);
+    console.error(err);
   }
 }
 
-// ==============================
-// VOTING (ESTABILIDAD)
-// ==============================
-function handlePrediction(label) {
-  predictionHistory.push(label);
+// -------- RESET --------
+function reset() {
+  buffer = [];
+  predictionEl.textContent = "—";
+  confidenceEl.textContent = "—";
 
-  if (predictionHistory.length > VOTE_WINDOW) {
-    predictionHistory.shift();
+  if (camera) {
+    camera.stop();
+    camera = null;
   }
 
-  const counts = {};
-  predictionHistory.forEach((l) => {
-    counts[l] = (counts[l] || 0) + 1;
-  });
-
-  let bestLabel = null;
-  let bestCount = 0;
-
-  for (const [l, c] of Object.entries(counts)) {
-    if (c > bestCount) {
-      bestLabel = l;
-      bestCount = c;
-    }
-  }
-
-  predictionEl.textContent = bestLabel;
-  confidenceEl.textContent =
-    `Confianza: ${Math.round((bestCount / VOTE_WINDOW) * 100)}%`;
+  video.pause();
+  video.src = "";
 }
