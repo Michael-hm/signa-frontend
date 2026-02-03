@@ -108,7 +108,7 @@ async function sendToBackend(sequence) {
     const data = await res.json();
     predictionEl.textContent = data.label;
     confidenceEl.textContent =
-      `Confianza: 82%`;
+      `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
   } catch (e) {
     console.error(e);
   }
