@@ -2,14 +2,13 @@
 // CONFIG
 // ==============================
 const BACKEND_URL = "https://signa-backend-production.up.railway.app/predict_sequence";
+
 const WINDOW_SIZE = 40;
 const FEATURES = 63;
 
-// FPS
 const TARGET_FPS = 20;
 const FRAME_INTERVAL = 1000 / TARGET_FPS;
 
-// Voting
 const VOTE_WINDOW = 5;
 
 // ==============================
@@ -32,14 +31,10 @@ let buffer = [];
 let sending = false;
 
 let predictionHistory = [];
-
-let camera = null;
-let animationId = null;
-let lastFrameTime = 0;
-let currentMode = null;
+let currentMode = "webcam"; // "webcam" | "video"
 
 // ==============================
-// MEDIAPIPE
+// MEDIAPIPE HOLISTIC
 // ==============================
 const holistic = new Holistic({
   locateFile: (file) =>
@@ -57,32 +52,24 @@ holistic.setOptions({
 holistic.onResults(onResults);
 
 // ==============================
-// WEBCAM
+// WEBCAM (SIEMPRE ACTIVA)
 // ==============================
-function startWebcam() {
-  reset();
-
-  currentMode = "webcam";
-
-  camera = new Camera(video, {
-    onFrame: async () => {
+const camera = new Camera(video, {
+  onFrame: async () => {
+    if (currentMode === "webcam") {
       await holistic.send({ image: video });
-    },
-    width: 640,
-    height: 480,
-  });
+    }
+  },
+  width: 640,
+  height: 480,
+});
 
-  camera.start();
-}
-
-// Arranca webcam al cargar
-startWebcam();
+camera.start();
 
 // ==============================
 // VIDEO UPLOAD
 // ==============================
 btnVideo.onclick = () => {
-  reset();
   currentMode = "video";
   videoUpload.click();
 };
@@ -91,36 +78,43 @@ videoUpload.onchange = async () => {
   const file = videoUpload.files[0];
   if (!file) return;
 
-  video.src = URL.createObjectURL(file);
-  video.loop = true;
-  video.muted = true;
-  video.playsInline = true;
+  const videoFile = document.createElement("video");
+  videoFile.src = URL.createObjectURL(file);
+  videoFile.muted = true;
+  videoFile.playsInline = true;
 
-  await video.play();
+  await videoFile.play();
 
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  canvas.width = videoFile.videoWidth;
+  canvas.height = videoFile.videoHeight;
 
-  lastFrameTime = 0;
-  animationId = requestAnimationFrame(processVideoFrame);
+  processUploadedVideo(videoFile);
 };
 
-function processVideoFrame(timestamp) {
-  if (currentMode !== "video") return;
+function processUploadedVideo(videoFile) {
+  let lastFrameTime = 0;
 
-  if (timestamp - lastFrameTime < FRAME_INTERVAL) {
-    animationId = requestAnimationFrame(processVideoFrame);
-    return;
+  function loop(timestamp) {
+    if (
+      videoFile.paused ||
+      videoFile.ended ||
+      currentMode !== "video"
+    ) {
+      currentMode = "webcam"; // 🔥 vuelve solo
+      return;
+    }
+
+    if (timestamp - lastFrameTime >= FRAME_INTERVAL) {
+      lastFrameTime = timestamp;
+
+      ctx.drawImage(videoFile, 0, 0, canvas.width, canvas.height);
+      holistic.send({ image: canvas });
+    }
+
+    requestAnimationFrame(loop);
   }
 
-  lastFrameTime = timestamp;
-
-  if (video.readyState >= 2) {
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    holistic.send({ image: canvas });
-  }
-
-  animationId = requestAnimationFrame(processVideoFrame);
+  requestAnimationFrame(loop);
 }
 
 // ==============================
@@ -131,6 +125,7 @@ function onResults(results) {
 
   if (!results.poseLandmarks) return;
 
+  // Dibujar landmarks
   results.poseLandmarks.forEach((p) => {
     ctx.beginPath();
     ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
@@ -138,6 +133,7 @@ function onResults(results) {
     ctx.fill();
   });
 
+  // Extraer 63 features
   const frame = results.poseLandmarks
     .slice(0, 21)
     .flatMap((p) => [p.x, p.y, p.z]);
@@ -167,23 +163,29 @@ async function sendToBackend(sequence) {
     if (!res.ok) return;
 
     const data = await res.json();
+
     if (data.confidence < 0.03) return;
 
     handlePrediction(data.label);
   } catch (err) {
-    console.error(err);
+    console.error("Backend error:", err);
   }
 }
 
 // ==============================
-// VOTING
+// VOTING (ESTABILIDAD)
 // ==============================
 function handlePrediction(label) {
   predictionHistory.push(label);
-  if (predictionHistory.length > VOTE_WINDOW) predictionHistory.shift();
+
+  if (predictionHistory.length > VOTE_WINDOW) {
+    predictionHistory.shift();
+  }
 
   const counts = {};
-  predictionHistory.forEach((l) => (counts[l] = (counts[l] || 0) + 1));
+  predictionHistory.forEach((l) => {
+    counts[l] = (counts[l] || 0) + 1;
+  });
 
   let bestLabel = null;
   let bestCount = 0;
@@ -198,29 +200,4 @@ function handlePrediction(label) {
   predictionEl.textContent = bestLabel;
   confidenceEl.textContent =
     `Estabilidad: ${Math.round((bestCount / VOTE_WINDOW) * 100)}%`;
-}
-
-// ==============================
-// RESET
-// ==============================
-function reset() {
-  buffer = [];
-  predictionHistory = [];
-  sending = false;
-
-  predictionEl.textContent = "—";
-  confidenceEl.textContent = "";
-
-  if (camera) {
-    camera.stop();
-    camera = null;
-  }
-
-  if (animationId) {
-    cancelAnimationFrame(animationId);
-    animationId = null;
-  }
-
-  video.pause();
-  video.src = "";
 }
