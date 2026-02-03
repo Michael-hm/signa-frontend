@@ -31,7 +31,7 @@ let buffer = [];
 let sending = false;
 
 let predictionHistory = [];
-let currentMode = "webcam"; // "webcam" | "video"
+let currentMode = "webcam";
 
 // ==============================
 // MEDIAPIPE HOLISTIC
@@ -78,6 +78,11 @@ videoUpload.onchange = async () => {
   const file = videoUpload.files[0];
   if (!file) return;
 
+  currentMode = "video";
+
+  video.style.display = "none";   
+  canvas.style.display = "block"; 
+
   const videoFile = document.createElement("video");
   videoFile.src = URL.createObjectURL(file);
   videoFile.muted = true;
@@ -100,7 +105,7 @@ function processUploadedVideo(videoFile) {
       videoFile.ended ||
       currentMode !== "video"
     ) {
-      currentMode = "webcam"; // 🔥 vuelve solo
+      currentMode = "webcam";
       return;
     }
 
@@ -199,5 +204,5 @@ function handlePrediction(label) {
 
   predictionEl.textContent = bestLabel;
   confidenceEl.textContent =
-    `Estabilidad: ${Math.round((bestCount / VOTE_WINDOW) * 100)}%`;
+    `Confianza: ${Math.round((bestCount / VOTE_WINDOW) * 100)}%`;
 }
