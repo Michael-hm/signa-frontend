@@ -6,8 +6,6 @@ const ctx = canvas.getContext("2d");
 
 const predictionEl = document.getElementById("prediction");
 const confidenceEl = document.getElementById("confidence");
-const statusEl = document.getElementById("status");
-const top3El = document.getElementById("top3");
 
 const btnWebcam = document.getElementById("btnWebcam");
 const btnVideo = document.getElementById("btnVideo");
@@ -15,13 +13,8 @@ const videoUpload = document.getElementById("videoUpload");
 
 const WINDOW_SIZE = 40;
 const FEATURES = 63;
-const CONSENSUS_N = 3;
 
 let buffer = [];
-let lastStableLabel = "—";
-let lastCandidateLabel = null;
-let candidateCount = 0;
-
 let currentMode = null;
 let animationId = null;
 let stream = null;
@@ -31,7 +24,6 @@ let sending = false;
 let lastFrameTime = 0;
 const TARGET_FPS = 20;
 const FRAME_INTERVAL = 1000 / TARGET_FPS;
-
 
 // ==============================
 // MEDIAPIPE HOLISTIC
@@ -91,20 +83,13 @@ function onResults(results) {
 
   buffer.push(frame);
 
-  const falta = WINDOW_SIZE - buffer.length;
-  if (falta > 0) {
-    statusEl.textContent = `Analizando… (${buffer.length}/${WINDOW_SIZE})`;
-  } else {
-    statusEl.textContent = "Enviando al modelo…";
-  }
-
-  if (buffer.length === WINDOW_SIZE && !sending) {
-    sending = true;
-    sendToBackend(buffer).finally(() => {
-      sending = false;
-    });
-    buffer.shift();
-  }
+if (buffer.length === WINDOW_SIZE && !sending) {
+  sending = true;
+  sendToBackend(buffer).finally(() => {
+    sending = false;
+  });
+  buffer = [];
+}
 }
 
 // ==============================
@@ -121,30 +106,9 @@ async function sendToBackend(sequence) {
     if (!res.ok) return;
 
     const data = await res.json();
-
-    const newLabel = data.label;
-
-    if (newLabel === lastCandidateLabel) {
-      candidateCount += 1;
-    } else {
-      lastCandidateLabel = newLabel;
-      candidateCount = 1;
-    }
-
-    if (candidateCount >= CONSENSUS_N) {
-      lastStableLabel = newLabel;
-    }
-
-    predictionEl.textContent = lastStableLabel;
-    confidenceEl.textContent = `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
-    statusEl.textContent = "";
-    if (data.top3 && Array.isArray(data.top3)) {
-      top3El.innerHTML = data.top3
-        .map(([label, conf]) => `${label}: ${(conf * 100).toFixed(1)}%`)
-        .join("<br>");
-    } else {
-      top3El.textContent = "";
-    }
+    predictionEl.textContent = data.label;
+    confidenceEl.textContent =
+      `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
   } catch (e) {
     console.error(e);
   }
@@ -154,10 +118,7 @@ async function sendToBackend(sequence) {
 // RESET TOTAL
 // ==============================
 function reset() {
-  lastStableLabel = "—";
-  lastCandidateLabel = null;
-  candidateCount = 0;
-  buffer.shift();
+  buffer = [];
   predictionEl.textContent = "—";
   confidenceEl.textContent = "";
 
@@ -179,11 +140,6 @@ function reset() {
 // WEBCAM
 // ==============================
 btnWebcam.onclick = async () => {
-
-  if (currentMode !== "webcam") {
-    animationId = requestAnimationFrame(processFrame);
-    return;
-  }
   reset();
   currentMode = "webcam";
 
