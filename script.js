@@ -1,9 +1,11 @@
+// ==============================
+// CONFIG
+// ==============================
 const BACKEND_URL = "https://signa-backend-production.up.railway.app/predict_sequence";
-
 const WINDOW_SIZE = 40;
 const FEATURES = 63;
 
-// FPS control
+// FPS
 const TARGET_FPS = 20;
 const FRAME_INTERVAL = 1000 / TARGET_FPS;
 
@@ -20,6 +22,9 @@ const ctx = canvas.getContext("2d");
 const predictionEl = document.getElementById("prediction");
 const confidenceEl = document.getElementById("confidence");
 
+const btnVideo = document.getElementById("btnVideo");
+const videoUpload = document.getElementById("videoUpload");
+
 // ==============================
 // STATE
 // ==============================
@@ -28,11 +33,13 @@ let sending = false;
 
 let predictionHistory = [];
 
-let lastFrameTime = 0;
+let camera = null;
 let animationId = null;
+let lastFrameTime = 0;
+let currentMode = null;
 
 // ==============================
-// MEDIAPIPE HOLISTIC
+// MEDIAPIPE
 // ==============================
 const holistic = new Holistic({
   locateFile: (file) =>
@@ -40,7 +47,7 @@ const holistic = new Holistic({
 });
 
 holistic.setOptions({
-  modelComplexity: 0, // 🔥 mucho más fluido
+  modelComplexity: 0,
   smoothLandmarks: true,
   refineFaceLandmarks: false,
   minDetectionConfidence: 0.5,
@@ -50,118 +57,33 @@ holistic.setOptions({
 holistic.onResults(onResults);
 
 // ==============================
-// CAMERA (WEBCAM)
+// WEBCAM
 // ==============================
-const camera = new Camera(video, {
-  onFrame: async () => {
-    // La webcam ya va sincronizada
-    await holistic.send({ image: video });
-  },
-  width: 640,
-  height: 480,
-});
+function startWebcam() {
+  reset();
 
-// ==============================
-// START CAMERA
-// ==============================
-camera.start();
+  currentMode = "webcam";
 
-// ==============================
-// PROCESS RESULTS
-// ==============================
-function onResults(results) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (!results.poseLandmarks) return;
-
-  // Dibujar puntos
-  results.poseLandmarks.forEach((p) => {
-    ctx.beginPath();
-    ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
-    ctx.fillStyle = "#38bdf8";
-    ctx.fill();
+  camera = new Camera(video, {
+    onFrame: async () => {
+      await holistic.send({ image: video });
+    },
+    width: 640,
+    height: 480,
   });
 
-  // Extraer 63 features
-  const frame = results.poseLandmarks
-    .slice(0, 21)
-    .flatMap((p) => [p.x, p.y, p.z]);
-
-  if (frame.length !== FEATURES) return;
-
-  buffer.push(frame);
-
-  if (buffer.length === WINDOW_SIZE && !sending) {
-    sending = true;
-    sendToBackend(buffer).finally(() => {
-      sending = false;
-    });
-    buffer = [];
-  }
+  camera.start();
 }
 
-// ==============================
-// BACKEND
-// ==============================
-async function sendToBackend(sequence) {
-  try {
-    const res = await fetch(BACKEND_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sequence }),
-    });
-
-    if (!res.ok) return;
-
-    const data = await res.json();
-
-    // Filtrar ruido extremo
-    if (data.confidence < 0.03) return;
-
-    handlePrediction(data.label);
-  } catch (err) {
-    console.error("Backend error:", err);
-  }
-}
-
-// ==============================
-// VOTING LOGIC (CLAVE)
-// ==============================
-function handlePrediction(label) {
-  predictionHistory.push(label);
-
-  if (predictionHistory.length > VOTE_WINDOW) {
-    predictionHistory.shift();
-  }
-
-  const counts = {};
-  predictionHistory.forEach((l) => {
-    counts[l] = (counts[l] || 0) + 1;
-  });
-
-  let bestLabel = null;
-  let bestCount = 0;
-
-  for (const [l, c] of Object.entries(counts)) {
-    if (c > bestCount) {
-      bestLabel = l;
-      bestCount = c;
-    }
-  }
-
-  predictionEl.textContent = bestLabel;
-  confidenceEl.textContent =
-    `Estabilidad: ${Math.round((bestCount / VOTE_WINDOW) * 100)}%`;
-}
+// Arranca webcam al cargar
+startWebcam();
 
 // ==============================
 // VIDEO UPLOAD
 // ==============================
-const videoUpload = document.getElementById("videoUpload");
-const btnVideo = document.getElementById("btnVideo");
-
 btnVideo.onclick = () => {
   reset();
+  currentMode = "video";
   videoUpload.click();
 };
 
@@ -184,6 +106,8 @@ videoUpload.onchange = async () => {
 };
 
 function processVideoFrame(timestamp) {
+  if (currentMode !== "video") return;
+
   if (timestamp - lastFrameTime < FRAME_INTERVAL) {
     animationId = requestAnimationFrame(processVideoFrame);
     return;
@@ -200,6 +124,83 @@ function processVideoFrame(timestamp) {
 }
 
 // ==============================
+// RESULTS
+// ==============================
+function onResults(results) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!results.poseLandmarks) return;
+
+  results.poseLandmarks.forEach((p) => {
+    ctx.beginPath();
+    ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2 * Math.PI);
+    ctx.fillStyle = "#38bdf8";
+    ctx.fill();
+  });
+
+  const frame = results.poseLandmarks
+    .slice(0, 21)
+    .flatMap((p) => [p.x, p.y, p.z]);
+
+  if (frame.length !== FEATURES) return;
+
+  buffer.push(frame);
+
+  if (buffer.length === WINDOW_SIZE && !sending) {
+    sending = true;
+    sendToBackend(buffer).finally(() => (sending = false));
+    buffer = [];
+  }
+}
+
+// ==============================
+// BACKEND
+// ==============================
+async function sendToBackend(sequence) {
+  try {
+    const res = await fetch(BACKEND_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sequence }),
+    });
+
+    if (!res.ok) return;
+
+    const data = await res.json();
+    if (data.confidence < 0.03) return;
+
+    handlePrediction(data.label);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// ==============================
+// VOTING
+// ==============================
+function handlePrediction(label) {
+  predictionHistory.push(label);
+  if (predictionHistory.length > VOTE_WINDOW) predictionHistory.shift();
+
+  const counts = {};
+  predictionHistory.forEach((l) => (counts[l] = (counts[l] || 0) + 1));
+
+  let bestLabel = null;
+  let bestCount = 0;
+
+  for (const [l, c] of Object.entries(counts)) {
+    if (c > bestCount) {
+      bestLabel = l;
+      bestCount = c;
+    }
+  }
+
+  predictionEl.textContent = bestLabel;
+  confidenceEl.textContent =
+    `Estabilidad: ${Math.round((bestCount / VOTE_WINDOW) * 100)}%`;
+}
+
+// ==============================
 // RESET
 // ==============================
 function reset() {
@@ -209,6 +210,11 @@ function reset() {
 
   predictionEl.textContent = "—";
   confidenceEl.textContent = "";
+
+  if (camera) {
+    camera.stop();
+    camera = null;
+  }
 
   if (animationId) {
     cancelAnimationFrame(animationId);
