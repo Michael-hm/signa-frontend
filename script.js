@@ -32,6 +32,22 @@ const holistic = new Holistic({
   locateFile: (file) =>
     `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
 });
+let holisticReady = false;
+
+async function warmUpHolistic() {
+  if (holisticReady) return;
+
+  // Canvas dummy para inicializar MediaPipe
+  const dummyCanvas = document.createElement("canvas");
+  dummyCanvas.width = 640;
+  dummyCanvas.height = 480;
+  const dummyCtx = dummyCanvas.getContext("2d");
+  dummyCtx.fillStyle = "black";
+  dummyCtx.fillRect(0, 0, 640, 480);
+
+  await holistic.send({ image: dummyCanvas });
+  holisticReady = true;
+}
 
 holistic.setOptions({
   modelComplexity: 0,
@@ -92,6 +108,22 @@ if (buffer.length === WINDOW_SIZE && !sending) {
 }
 }
 
+
+let lastPredictions = [];
+
+function updatePrediction(label, confidence) {
+  lastPredictions.push(label);
+  if (lastPredictions.length > 3) lastPredictions.shift();
+
+  const allSame = lastPredictions.every(p => p === label);
+
+  if (allSame) {
+    predictionEl.textContent = label;
+    confidenceEl.textContent =
+      `Confianza: ${(confidence * 100).toFixed(1)}%`;
+  }
+}
+
 // ==============================
 // BACKEND
 // ==============================
@@ -104,11 +136,9 @@ async function sendToBackend(sequence) {
     });
 
     if (!res.ok) return;
-
+    
     const data = await res.json();
-    predictionEl.textContent = data.label;
-    confidenceEl.textContent =
-      `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
+    updatePrediction(data.label, data.confidence);
   } catch (e) {
     console.error(e);
   }
@@ -141,6 +171,7 @@ function reset() {
 // ==============================
 btnWebcam.onclick = async () => {
   reset();
+  await warmUpHolistic();
   currentMode = "webcam";
 
   stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -166,6 +197,8 @@ btnVideo.onclick = () => {
 videoUpload.onchange = async () => {
   const file = videoUpload.files[0];
   if (!file) return;
+
+  await warmUpHolistic();
 
   const videoFile = document.createElement("video");
   videoFile.src = URL.createObjectURL(file);
