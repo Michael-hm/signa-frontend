@@ -1,6 +1,16 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: "Inter", system-ui, sans-serif;
+}
+
 body {
+  min-height: 100vh;
   font-family: Arial, sans-serif;
-  background: #0f172a;
+  background: 
+    radial-gradient(circle at top, #50057c 0%, transparent 40%),
+    linear-gradient(180deg, #150217, #0f0217);
   color: white;
   text-align: center;
 }
@@ -14,6 +24,7 @@ h1 {
   justify-content: center;
   gap: 40px;
   margin-top: 30px;
+  background: transparent;
 }
 
 .camera-box {
@@ -24,42 +35,76 @@ video, canvas {
   width: 640px;
   height: 480px;
   border-radius: 12px;
-  border: 2px solid #38bdf8;
+  border: 2px solid #9b38f8;
 }
 
 canvas {
   position: absolute;
   top: 0;
+  background: rgba(15, 2, 23, 0.35);
   left: 0;
-}
-
-.result-box {
-  min-width: 250px;
-  padding: 20px;
-  background: #020617;
-  border-radius: 12px;
-  border: 2px solid #38bdf8;
 }
 
 #prediction {
   font-size: 32px;
   margin-top: 20px;
-  color: #38bdf8;
+  color: #9b38f8;
 }
 
 #confidence {
   margin-top: 10px;
   font-size: 14px;
   opacity: 0.8;
+  color: #ad94b8;
 }
+
 #btnWebcam, #btnVideo {
   margin-top: 20px;
   padding: 10px 20px;
   font-size: 16px;
-  border: none;
+  border: 1px solid rgba(162, 56, 248, 0.5);
   border-radius: 8px;
-  background-color: #38bdf8;
-  color: #0f172a;
+  background: rgba(146, 56, 248, 0.15);
+  color: #ffffff;
   cursor: pointer;
   transition: background-color 0.3s;
+}
+
+#btnWebcam:hover, #btnVideo:hover {
+  background-color: rgba(155, 56, 248, 1);
+}
+.actions {
+    margin-top: 24px;
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+}
+
+.controls p {
+    margin-top: 8px;
+    color: #94a3b8;
+}
+
+.controls h1 {
+    font-size: 44px;
+    letter-spacing: 4px;
+    color: #ffffff;
+}
+.result-box {
+    background: rgba(15, 2, 23, 0.35);
+    border-radius: 24px;
+    border: 2px solid #9b38f8;
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 450px;
+    height: 480px;
+}
+
+.result-box h2 {
+    font-size: 20px;
+    margin-bottom: 24px;
+    color: #e5e7eb;
 }

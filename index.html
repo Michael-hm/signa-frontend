@@ -7,12 +7,15 @@
 </head>
 <body>
 
-  <h1>SIGNA</h1>
-
   <div class="controls">
+    <h1>SIGNA</h1>
+    <p>Reconocimiento visual de lengua de signos</p>
+    <div class="actions">
     <button id="btnWebcam">Webcam</button>
     <button id="btnVideo">Subir vídeo</button>
     <input type="file" id="videoUpload" accept="video/*" hidden />
+    </div>
+    
   </div>
 
   <div class="container">
@@ -23,14 +26,14 @@
 
     <div class="result-box">
       <h2>Palabra detectada</h2>
-      <div id="prediction">—</div>
+      <div id="prediction">--</div>
       <div id="confidence">—</div>
       <div id="status"></div>
       <div id="top3"></div>
     </div>
   </div>
 
-  <!-- MediaPipe -->
+  
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 

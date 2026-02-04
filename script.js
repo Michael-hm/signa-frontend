@@ -71,7 +71,7 @@ function onResults(results) {
   results.poseLandmarks.forEach(p => {
     ctx.beginPath();
     ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#38bdf8";
+    ctx.fillStyle = "#7238f8";
     ctx.fill();
   });
 
