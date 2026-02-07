@@ -1,21 +1,23 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8" />
   <title>SIGNA</title>
   <link rel="stylesheet" href="style.css" />
 </head>
+
 <body>
 
   <div class="controls">
     <h1>SIGNA</h1>
     <p>Reconocimiento visual de lengua de signos</p>
     <div class="actions">
-    <button id="btnWebcam">Webcam</button>
-    <button id="btnVideo">Subir vídeo</button>
-    <input type="file" id="videoUpload" accept="video/*" hidden />
+      <button id="btnWebcam">Webcam</button>
+      <button id="btnVideo">Subir vídeo</button>
+      <input type="file" id="videoUpload" accept="video/*" hidden />
     </div>
-    
+
   </div>
 
   <div class="container">
@@ -33,10 +35,10 @@
     </div>
   </div>
 
-  
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="script.js"></script>
 </body>
+
 </html>

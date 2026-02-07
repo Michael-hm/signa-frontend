@@ -1,5 +1,18 @@
-const BACKEND_URL = "https://signa-backend-production.up.railway.app/predict_sequence";
+// =====================================
+// CONFIG
+// =====================================
+const BACKEND_URL =
+  "https://signa-backend-production.up.railway.app/predict_sequence";
 
+const WINDOW_SIZE = 40;
+const FEATURES = 63;
+const FPS = 20;
+const FRAME_INTERVAL = 1000 / FPS;
+const MIN_CONFIDENCE = 0.6;
+
+// =====================================
+// DOM
+// =====================================
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -11,122 +24,118 @@ const btnWebcam = document.getElementById("btnWebcam");
 const btnVideo = document.getElementById("btnVideo");
 const videoUpload = document.getElementById("videoUpload");
 
-const WINDOW_SIZE = 40;
-const FEATURES = 63;
-
+// =====================================
+// STATE
+// =====================================
 let buffer = [];
-let currentMode = null;
-let animationId = null;
-let stream = null;
-
+let lastPredictions = [];
 let sending = false;
+let stream = null;
+let currentSource = null; // "webcam" | "video"
+let rafId = null;
+let lastTime = 0;
+let processingFrame = false;
+let lockedPrediction = null;
+let lockedConfidence = 0;
 
-let lastFrameTime = 0;
-const TARGET_FPS = 20;
-const FRAME_INTERVAL = 1000 / TARGET_FPS;
 
-// ==============================
-// MEDIAPIPE HOLISTIC
-// ==============================
-const holistic = new Holistic({
+
+// =====================================
+// MEDIAPIPE HANDS (UNA SOLA VEZ)
+// =====================================
+const hands = new Hands({
   locateFile: (file) =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
+    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
 });
-let holisticReady = false;
 
-async function warmUpHolistic() {
-  if (holisticReady) return;
-
-  // Canvas dummy para inicializar MediaPipe
-  const dummyCanvas = document.createElement("canvas");
-  dummyCanvas.width = 640;
-  dummyCanvas.height = 480;
-  const dummyCtx = dummyCanvas.getContext("2d");
-  dummyCtx.fillStyle = "black";
-  dummyCtx.fillRect(0, 0, 640, 480);
-
-  await holistic.send({ image: dummyCanvas });
-  holisticReady = true;
-}
-
-holistic.setOptions({
-  modelComplexity: 0,
-  smoothLandmarks: true,
-  refineFaceLandmarks: false,
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 1,
   minDetectionConfidence: 0.5,
   minTrackingConfidence: 0.5,
 });
 
-holistic.onResults(onResults);
+hands.onResults(onResults);
 
-// ==============================
-// LOOP ÚNICO DE PROCESADO
-// ==============================
-async function processFrame(timestamp) {
-  if (timestamp - lastFrameTime < FRAME_INTERVAL) {
-    animationId = requestAnimationFrame(processFrame);
+// =====================================
+// MAIN LOOP (ÚNICO)
+// =====================================
+async function loop(timestamp) {
+  if (timestamp - lastTime < FRAME_INTERVAL) {
+    rafId = requestAnimationFrame(loop);
     return;
   }
+  lastTime = timestamp;
 
-  lastFrameTime = timestamp;
-
-  if (video.readyState >= 2) {
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    await holistic.send({ image: canvas });
+  if (
+    video.readyState >= 2 &&
+    !processingFrame &&
+    video.videoWidth > 0
+  ) {
+    processingFrame = true;
+    await hands.send({ image: video });
+    processingFrame = false;
   }
 
-  animationId = requestAnimationFrame(processFrame);
+  rafId = requestAnimationFrame(loop);
 }
 
-// ==============================
-// RESULTADOS
-// ==============================
+// =====================================
+// RESULTS
+// =====================================
 function onResults(results) {
-  if (!results.poseLandmarks) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  results.poseLandmarks.forEach(p => {
+  if (!results.multiHandLandmarks?.length) return;
+
+  const hand = results.multiHandLandmarks[0];
+  const wrist = hand[0];
+
+  // Dibujar landmarks
+  for (const lm of hand) {
     ctx.beginPath();
-    ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#7238f8";
+    ctx.arc(
+      lm.x * canvas.width,
+      lm.y * canvas.height,
+      4,
+      0,
+      Math.PI * 2
+    );
+    ctx.fillStyle = "#7b00ce";
     ctx.fill();
-  });
+  }
 
-  const frame = results.poseLandmarks
-    .slice(0, 21)
-    .flatMap(p => [p.x, p.y, p.z]);
+  const frame = [];
+  for (const lm of hand) {
+    frame.push(
+      lm.x - wrist.x,
+      lm.y - wrist.y,
+      lm.z - wrist.z
+    );
+  }
 
   if (frame.length !== FEATURES) return;
 
   buffer.push(frame);
 
-if (buffer.length === WINDOW_SIZE && !sending) {
-  sending = true;
-  sendToBackend(buffer).finally(() => {
-    sending = false;
-  });
-  buffer = [];
-}
-}
+  if (buffer.length < WINDOW_SIZE) {
+    if (!lockedPrediction) {
+      predictionEl.textContent = "Analizando…";
+    }
+    return;
+  }
 
-
-let lastPredictions = [];
-
-function updatePrediction(label, confidence) {
-  lastPredictions.push(label);
-  if (lastPredictions.length > 3) lastPredictions.shift();
-
-  const allSame = lastPredictions.every(p => p === label);
-
-  if (allSame) {
-    predictionEl.textContent = label;
-    confidenceEl.textContent =
-      `Confianza: ${(confidence * 100).toFixed(1)}%`;
+  if (!sending) {
+    sending = true;
+    sendToBackend([...buffer]).finally(() => (sending = false));
+    buffer = [];
   }
 }
 
-// ==============================
+// =====================================
 // BACKEND
-// ==============================
+// =====================================
 async function sendToBackend(sequence) {
   try {
     const res = await fetch(BACKEND_URL, {
@@ -136,101 +145,119 @@ async function sendToBackend(sequence) {
     });
 
     if (!res.ok) return;
-    
+
     const data = await res.json();
-    updatePrediction(data.label, data.confidence);
+
+    // TOP-3
+    predictionEl.innerHTML = data.top3
+      .map(
+        (p) => `${p.label} (${(p.confidence * 100).toFixed(1)}%)`
+      )
+      .join("<br>");
+
+    // Consenso
+    lastPredictions.push(data.label);
+    if (lastPredictions.length > 3) lastPredictions.shift();
+
+    const consensus = lastPredictions.every(
+      (p) => p === lastPredictions[0]
+    );
+
+    if (consensus) {
+      predictionEl.innerHTML = `<strong>${data.label}</strong>`;
+      confidenceEl.textContent =
+        `Confianza: ${(data.confidence * 100).toFixed(1)}%`;
+    }
   } catch (e) {
     console.error(e);
   }
 }
 
-// ==============================
-// RESET TOTAL
-// ==============================
+// =====================================
+// RESET
+// =====================================
 function reset() {
   buffer = [];
+  lastPredictions = [];
   predictionEl.textContent = "—";
   confidenceEl.textContent = "";
+  lockedPrediction = null;
+  lockedConfidence = 0;
+  lockUntil = 0;
 
-  if (animationId) {
-    cancelAnimationFrame(animationId);
-    animationId = null;
+  if (rafId) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
   }
 
   if (stream) {
-    stream.getTracks().forEach(t => t.stop());
+    stream.getTracks().forEach((t) => t.stop());
     stream = null;
   }
 
   video.pause();
   video.srcObject = null;
+  video.src = "";
 }
 
-// ==============================
+// =====================================
 // WEBCAM
-// ==============================
+// =====================================
 btnWebcam.onclick = async () => {
   reset();
-  await warmUpHolistic();
-  currentMode = "webcam";
+  currentSource = "webcam";
 
   stream = await navigator.mediaDevices.getUserMedia({ video: true });
   video.srcObject = stream;
 
-  await video.play();
+  video.onloadedmetadata = async () => {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    await video.play();
+    rafId = requestAnimationFrame(loop);
+  };
+};
+// =====================================
+// VIDEO
+// =====================================
+btnVideo.addEventListener("click", (e) => {
+  e.preventDefault(); // por si está dentro de un form
+  e.stopPropagation();
+
+  console.log("CLICK btnVideo"); // ✅ debug
+
+  // 🔑 importantísimo para que onchange dispare aunque repitas el mismo archivo
+  videoUpload.value = "";
+
+  // NO llames a reset() aquí si te está frenando (luego lo hacemos en onchange)
+  videoUpload.click();
+});
+
+
+videoUpload.addEventListener("change", async () => {
+  console.log("CHANGE videoUpload", videoUpload.files); // ✅ debug
+
+  const file = videoUpload.files?.[0];
+  if (!file) return;
+
+  reset();
+  currentSource = "video";
+
+  video.srcObject = null;
+  video.src = URL.createObjectURL(file);
+  video.muted = true;
+  video.loop = true;
+  video.playsInline = true;
+
+  // Esperar metadata de verdad
+  await new Promise((resolve) => {
+    video.onloadedmetadata = () => resolve();
+  });
 
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
 
-  processFrame();
-};
+  await video.play();
 
-// ==============================
-// VÍDEO SUBIDO
-// ==============================
-btnVideo.onclick = () => {
-  reset();
-  currentMode = "video";
-  videoUpload.click();
-};
-
-videoUpload.onchange = async () => {
-  const file = videoUpload.files[0];
-  if (!file) return;
-
-  await warmUpHolistic();
-
-  const videoFile = document.createElement("video");
-  videoFile.src = URL.createObjectURL(file);
-  videoFile.muted = true;
-  videoFile.playsInline = true;
-  videoFile.loop = true;
-
-  await videoFile.play();
-
-  canvas.width = videoFile.videoWidth;
-  canvas.height = videoFile.videoHeight;
-
-  processUploadedVideo(videoFile);
-};
-
-function processUploadedVideo(videoFile) {
-  let lastTime = 0;
-
-  function loop(timestamp) {
-    if (currentMode !== "video" || videoFile.ended || videoFile.paused) {
-      return;
-    }
-
-    if (timestamp - lastTime >= FRAME_INTERVAL) {
-      lastTime = timestamp;
-
-      ctx.drawImage(videoFile, 0, 0, canvas.width, canvas.height);
-      holistic.send({ image: canvas });
-    }
-
-    requestAnimationFrame(loop);
-  }
-
-  requestAnimationFrame(loop);
-}
+  rafId = requestAnimationFrame(loop);
+});
